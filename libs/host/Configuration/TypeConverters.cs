@@ -89,9 +89,9 @@ namespace Garnet
                 switch (logLevel)
                 {
                     case LogLevel.Trace:
-                        return RedisLogLevel.Verbose;
-                    case LogLevel.Debug:
                         return RedisLogLevel.Debug;
+                    case LogLevel.Debug:
+                        return RedisLogLevel.Verbose;
                     case LogLevel.Information:
                         return RedisLogLevel.Notice;
                     case LogLevel.Warning:
@@ -121,9 +121,9 @@ namespace Garnet
                 switch (value)
                 {
                     case RedisLogLevel.Verbose:
-                        return LogLevel.Trace;
-                    case RedisLogLevel.Debug:
                         return LogLevel.Debug;
+                    case RedisLogLevel.Debug:
+                        return LogLevel.Trace;
                     case RedisLogLevel.Notice:
                         return LogLevel.Information;
                     case RedisLogLevel.Warning:
