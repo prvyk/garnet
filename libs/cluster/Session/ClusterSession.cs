@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.networking;
@@ -35,6 +37,7 @@ namespace Garnet.cluster
         // User currently authenticated in this session
         UserHandle userHandle;
 
+        byte respProcotolVersion;
         SessionParseState parseState;
         byte* dcurr, dend;
         long _localCurrentEpoch = 0;
@@ -57,7 +60,11 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public IGarnetServer Server { get; set; }
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator,
+                              UserHandle userHandle, GarnetSessionMetrics sessionMetrics,
+                              BasicGarnetApi basicGarnetApi, INetworkSender networkSender,
+                              byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION,
+                              ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
@@ -66,6 +73,7 @@ namespace Garnet.cluster
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
             this.networkSender = networkSender;
+            this.respProcotolVersion = respProtocolVersion;
             this.logger = logger;
         }
 
@@ -150,6 +158,48 @@ namespace Garnet.cluster
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendAndReset(IMemoryOwner<byte> memory, int length)
+        {
+            // Copy allocated memory to main buffer and send
+            fixed (byte* _src = memory.Memory.Span)
+            {
+                byte* src = _src;
+                int bytesLeft = length;
+
+                // Repeat while we have bytes left to write from input Memory to output buffer
+                while (bytesLeft > 0)
+                {
+                    // Compute space left on output buffer
+                    int destSpace = (int)(dend - dcurr);
+
+                    // Adjust number of bytes to copy, to MIN(space left on output buffer, bytes left to copy)
+                    int toCopy = bytesLeft;
+                    if (toCopy > destSpace)
+                        toCopy = destSpace;
+
+                    // Copy bytes to output buffer
+                    Buffer.MemoryCopy(src, dcurr, destSpace, toCopy);
+
+                    // Move cursor on output buffer and input memory, update bytes left
+                    dcurr += toCopy;
+                    src += toCopy;
+                    bytesLeft -= toCopy;
+
+                    // If output buffer is full, send and reset output buffer. It is okay to leave the
+                    // buffer partially full, as ProcessMessage will do a final Send before returning.
+                    if (toCopy == destSpace)
+                    {
+                        Send(networkSender.GetResponseObjectHead());
+                        networkSender.GetResponseObject();
+                        dcurr = networkSender.GetResponseObjectHead();
+                        dend = networkSender.GetResponseObjectTail();
+                    }
+                }
+            }
+            memory.Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Send(byte* d)
         {
             // #if DEBUG
@@ -171,6 +221,15 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="respProtocolVersion"></param>
+        public void SetRespVersion(byte respProtocolVersion)
+        {
+            this.respProcotolVersion = respProtocolVersion;
+        }
+
+        /// <summary>
         /// Updates the user currently authenticated in the session.
         /// </summary>
         /// <param name="userHandle"><see cref="UserHandle"/> to set as authenticated user.</param>
@@ -178,6 +237,7 @@ namespace Garnet.cluster
         {
             this.userHandle = userHandle;
         }
+
         public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
         public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
 

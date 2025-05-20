@@ -45,6 +45,12 @@ namespace Garnet.server
         void SetReadWriteSession();
 
         /// <summary>
+        /// Sets RESP protocol version
+        /// </summary>
+        /// <param name="respProtocolVersion"></param>
+        void SetRespVersion(byte respProtocolVersion);
+
+        /// <summary>
         /// Local current epoch
         /// </summary>
         long LocalCurrentEpoch { get; }

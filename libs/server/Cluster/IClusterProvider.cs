@@ -27,7 +27,9 @@ namespace Garnet.server
         /// <summary>
         /// Create cluster session
         /// </summary>
-        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
+        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle,
+                                             GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender,
+                                             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION, ILogger logger = null);
 
 
         /// <summary>
