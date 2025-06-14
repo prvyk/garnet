@@ -1306,5 +1306,33 @@ namespace Garnet.common
 
             return true;
         }
+
+        /// <summary>
+        /// Returns an integer that indicates whether a value is positive or negative infinity.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>1 for positive infinity, -1 for negative infinity, 0 for all other cases</returns>
+        public static int IsInfinity(ReadOnlySpan<byte> value)
+        {
+            if (value.Length == 3)
+            {
+                return value.EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY) ? 1 : 0;
+            }
+
+            if (value.Length == 4)
+            {
+                if (value[0] == '+')
+                {
+                    return value.Slice(1, 3).EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY) ? 1 : 0;
+                }
+
+                if (value[0] == '-')
+                {
+                    return value.Slice(1, 3).EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY) ? -1 : 0;
+                }
+            }
+
+            return 0;
+        }
     }
 }

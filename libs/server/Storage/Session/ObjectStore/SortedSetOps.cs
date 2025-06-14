@@ -403,8 +403,20 @@ namespace Garnet.server
                 var result = ProcessRespSingleTokenOutput(output);
                 if (result.length > 0)
                 {
+                    var sbResult = result.ReadOnlySpan;
                     // get the new score
-                    _ = NumUtils.TryParse(result.ReadOnlySpan, out newScore);
+                    if (!NumUtils.TryParse(sbResult, out newScore))
+                    {
+                        var inf = RespReadUtils.IsInfinity(sbResult);
+                        if (inf == 1)
+                        {
+                            newScore = double.PositiveInfinity;
+                        }
+                        else if (inf == -1)
+                        {
+                            newScore = double.NegativeInfinity;
+                        }
+                    }
                 }
             }
 
@@ -1482,6 +1494,8 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
+            // Inf
+
             // Initialize result with first set
             if (weights is null)
             {
@@ -1535,6 +1549,12 @@ namespace Garnet.server
                         SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
                         _ => kvp.Value + weightedScore // Default to SUM
                     };
+
+                    // Bug compatible behaviour
+                    if (double.IsNaN(pairs[kvp.Key]))
+                    {
+                        pairs[kvp.Key] = 0;
+                    }
                 }
 
                 // If intersection becomes empty, we can stop early

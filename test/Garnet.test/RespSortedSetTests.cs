@@ -384,6 +384,52 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AddInfinites()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "SortedSet_Add";
+
+            // Test accepting all variations of inf, -inf, +inf.
+            var response = db.Execute("ZADD", key, "inf", "a", "-inf", "b", "+inf", "c", "iNF", "d", "+Inf", "e");
+            ClassicAssert.AreEqual(5, int.Parse(response.ToString()));
+
+            //Test addition
+            response = db.Execute("ZADD", key, "INCR", "inf", "a");
+            ClassicAssert.AreEqual("inf", response.ToString());
+
+            response = db.Execute("ZINCRBY", key, "-inf", "b");
+            ClassicAssert.AreEqual("-inf", response.ToString());
+
+            response = db.Execute("ZINCRBY", key, "+1", "b");
+            ClassicAssert.AreEqual("-inf", response.ToString());
+
+            response = db.Execute("ZADD", key, "INCR", "-1", "c");
+            ClassicAssert.AreEqual("inf", response.ToString());
+
+            //These should blow up
+            var expectedErrorMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+            try
+            {
+                db.Execute("ZADD", key, "INCR", "-inf", "a");
+            }
+            catch (RedisServerException e)
+            {
+                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
+            }
+
+            try
+            {
+                db.Execute("ZINCRBY", key, "+inf", "b");
+            }
+            catch (RedisServerException e)
+            {
+                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
+            }
+        }
+
+        [Test]
         [TestCase(RedisProtocol.Resp2)]
         [TestCase(RedisProtocol.Resp3)]
         public void AddWithOptionsErrorConditions(RedisProtocol protocol)

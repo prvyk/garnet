@@ -762,11 +762,14 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var incrSlice = parseState.GetArgSliceByRef(1);
 
-            if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out float _))
+            if (!parseState.TryGetDouble(2, out var dbl))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+            }
+
+            if (double.IsInfinity(dbl))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
             }
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];

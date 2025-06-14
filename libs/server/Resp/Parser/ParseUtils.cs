@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Buffers.Text;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -99,9 +100,9 @@ namespace Garnet.server
         /// Parsed double
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double ReadDouble(ref ArgSlice slice)
+        public static double ReadDouble(ref ArgSlice slice, bool canBeInfinite)
         {
-            if (!TryReadDouble(ref slice, out var number))
+            if (!TryReadDouble(ref slice, out var number, canBeInfinite))
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
             }
@@ -115,11 +116,28 @@ namespace Garnet.server
         /// True if double parsed successfully
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadDouble(ref ArgSlice slice, out double number)
+        public static bool TryReadDouble(ref ArgSlice slice, out double number, bool canBeInfinite)
         {
             var sbNumber = slice.ReadOnlySpan;
-            return Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
-                            bytesConsumed == sbNumber.Length;
+            if (Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
+                            bytesConsumed == sbNumber.Length)
+                return true;
+            if (!canBeInfinite)
+                return false;
+
+            var inf = RespReadUtils.IsInfinity(sbNumber);
+            if (inf == 1)
+            {
+                number = double.PositiveInfinity;
+                return true;
+            }
+            if (inf == -1)
+            {
+                number = double.NegativeInfinity;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

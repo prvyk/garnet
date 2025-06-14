@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -150,6 +149,12 @@ namespace Garnet.server
                         {
                             score += scoreStored;
                             incrResult = score;
+
+                            if (double.IsNaN(score))
+                            {
+                                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                                return;
+                            }
                         }
 
                         // No need for update
@@ -329,6 +334,13 @@ namespace Garnet.server
             if (sortedSetDict.TryGetValue(member, out var score))
             {
                 sortedSetDict[member] += incrValue;
+
+                if (double.IsNaN(sortedSetDict[member]))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                    return;
+                }
+
                 sortedSet.Remove((score, member));
                 sortedSet.Add((sortedSetDict[member], member));
             }
@@ -1112,7 +1124,7 @@ namespace Garnet.server
         #region HelperMethods
 
         /// <summary>
-        /// Helper method to parse parameters min and max
+        /// Helper method to parse parameters min and max and exclusions
         /// in commands including +inf -inf
         /// </summary>
         private static bool TryParseParameter(ReadOnlySpan<byte> val, out double valueDouble, out bool exclusive)
@@ -1131,19 +1143,20 @@ namespace Garnet.server
                 return true;
             }
 
-            var strVal = Encoding.ASCII.GetString(val);
-            if (string.Equals("+inf", strVal, StringComparison.OrdinalIgnoreCase))
+            var inf = RespReadUtils.IsInfinity(val);
+            if (inf == 1)
             {
                 valueDouble = double.PositiveInfinity;
                 exclusive = false;
                 return true;
             }
-            else if (string.Equals("-inf", strVal, StringComparison.OrdinalIgnoreCase))
+            else if (inf == -1)
             {
                 valueDouble = double.NegativeInfinity;
                 exclusive = false;
                 return true;
             }
+
             return false;
         }
 
