@@ -522,10 +522,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("CLIENT|SETNAME");
             }
 
-            var name = parseState.GetString(0);
-            if (string.IsNullOrEmpty(name) || name.Contains(' '))   // it is not possible to use spaces in the connection name as this would violate the format of the CLIENT LIST reply
+            if (!parseState.TryGetNewClientName(0, out var name, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                return AbortWithErrorMessage(error);
             }
 
             this.clientName = name;

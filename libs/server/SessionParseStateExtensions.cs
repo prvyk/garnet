@@ -558,6 +558,36 @@ namespace Garnet.server
 
 
         /// <summary>
+        /// Parse client name from parse state at specified index.
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="clientName">Client name</param>
+        /// <param name="error">Error if failed</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetNewClientName(this SessionParseState parseState, int idx, out string clientName, out ReadOnlySpan<byte> error)
+        {
+            error = default;
+            clientName = parseState.GetString(idx);
+
+            if (string.IsNullOrEmpty(clientName))
+            {
+                return true;
+            }
+
+            foreach (var c in clientName)
+            {
+                if (c < 33 || c > 126)
+                {
+                    error = "ERR Client names cannot contain spaces, newlines or special characters."u8;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Parse manager type from parse state at specified index
         /// </summary>
         /// <param name="parseState">The parse state</param>

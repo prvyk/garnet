@@ -1318,7 +1318,10 @@ namespace Garnet.server
                             break;
                         }
 
-                        tmpClientName = parseState.GetString(tokenIdx++);
+                        if (!parseState.TryGetNewClientName(tokenIdx++, out tmpClientName, out var error))
+                        {
+                            return AbortWithErrorMessage(error);
+                        }
                     }
                     else
                     {
