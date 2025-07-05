@@ -1291,6 +1291,11 @@ namespace Garnet.server
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER);
                 }
 
+                if (localRespProtocolVersion is < 2 or > 3)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION);
+                }
+
                 tmpRespProtocolVersion = (byte)localRespProtocolVersion;
 
                 while (tokenIdx < count)
@@ -1525,23 +1530,19 @@ namespace Garnet.server
         /// </summary>
         void ProcessHelloCommand(byte? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
         {
-            if (respProtocolVersion != null)
+            // Per RESP3 specifications and observed behaviour, every failure in validation or authentication
+            // should prevent the entire command from being run. For example,
+            // "HELLO 3 AUTH user password SETNAME name" should not change protocol or name if
+            // the user authentication fails for any reason.
+            //
+            // So we must do things in a particular order:
+            // First, validations, then authentication, and then if everything is fine,
+            // the changes themselves.
+            if ((respProtocolVersion != null) && (respProtocolVersion.Value != this.respProtocolVersion) &&
+                (asyncCompleted < asyncStarted))
             {
-                if (respProtocolVersion.Value is < 2 or > 3)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION, ref dcurr, dend))
-                        SendAndReset();
-                    return;
-                }
-
-                if (respProtocolVersion.Value != this.respProtocolVersion && asyncCompleted < asyncStarted)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ASYNC_PROTOCOL_CHANGE, ref dcurr, dend))
-                        SendAndReset();
-                    return;
-                }
-
-                this.UpdateRespProtocolVersion(respProtocolVersion.Value);
+                WriteError(CmdStrings.RESP_ERR_ASYNC_PROTOCOL_CHANGE);
+                return;
             }
 
             if (!username.IsEmpty)
@@ -1550,16 +1551,19 @@ namespace Garnet.server
                 {
                     if (username.IsEmpty)
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD);
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD);
                     }
                     return;
                 }
+            }
+
+            if ((respProtocolVersion != null) && (respProtocolVersion.Value != this.respProtocolVersion))
+            {
+                this.UpdateRespProtocolVersion(respProtocolVersion.Value);
             }
 
             if (clientName != null)
