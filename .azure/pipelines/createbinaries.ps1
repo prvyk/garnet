@@ -1,12 +1,12 @@
 <#$f
 .SYNOPSIS
-    This script is designed to publish GarnetServer into various platforms. 
+	This script is designed to publish GarnetServer into various platforms. 
 
 .DESCRIPTION
 
-    Script to publish the GarnetServer executable from various Profiles. It will clean up all the files not needed and by default it will zip them all up in the output directory. 
+	Script to publish the GarnetServer executable from various Profiles. It will clean up all the files not needed and by default it will zip them all up in the output directory. 
 	
-    Parameter: mode
+	Parameter: mode
 		0 (default) = do both publish and zip
 		1 = publish only
 		2 = zip only
@@ -15,8 +15,8 @@
 			Doing this allows actions (code signing etc) on the files before it is zipped. Running the script after that can zip up everything (using mode 2).
    
 .EXAMPLE
-    ./createbinaries.ps1 
- 	./createbinaries.ps1 0
+	./createbinaries.ps1 
+	./createbinaries.ps1 0
 	./createbinaries.ps1 -mode 1
 #>
 
@@ -29,40 +29,46 @@ param (
 
 # ******** FUNCTION DEFINITIONS  *********
 
-################## CleanUpFiles ##################### 
+################## BuildAndCleanUpFiles #####################
 #  
-#  After build is published, this cleans it up so only the necessary files will be ready to be zipped
+#  Publishes build and afterwards cleans it up so only the necessary files will be ready to be zipped
 #  
 ######################################################
-function CleanUpFiles {
-    param ($publishFolder, $platform, $framework, $deleteRunTimes = $true)
+function BuildAndCleanUpFiles {
+	param ($publishFolder, $platform, $framework)
 
-	$publishPath = "$basePath/main/GarnetServer/bin/Release/$framework/publish/$publishFolder"
+	$publishPath = "$outputPath/bin/Release/$framework/publish/$publishFolder"
 	$excludeGarnetServerPDB = 'GarnetServer.pdb'
 
 	# Native binary is different based on OS by default
-	$nativeFile = "libnative_device.so"
+	$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/libnative_device.so"
 
-	if ($platform -match "win-x64") {
-		$nativeFile = "native_device.dll"
-	}
+	$GarnetServer = "$basePath/main/GarnetServer/GarnetServer.csproj"
+	$GarnetWorker = "$basePath/hosting/Windows/Garnet.worker/Garnet.worker.csproj"
 
-	$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/$nativeFile"
-
-	if (Test-Path -Path $publishPath) {
-		Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
-		Get-ChildItem -Path $publishPath -Filter '*.pdb' | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
-
-		# Copy proper native run time to publish directory
-		Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
+	if ($publishFolder -match "portable")
+	{
+		dotnet publish $GarnetServer -p:PublishProfile="portable" -f:$framework --artifacts-path "$buildPath" -o $publishPath
+		# don't clean up all files for portable ... leave as is
+		return;
+	} elseif ($platform -match "win-x64") {
+		$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/native_device.dll"
+		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based-readytorun" -f:$framework --artifacts-path "$buildPath" -o $publishPath
+		dotnet publish $GarnetWorker -r $publishFolder -p:SelfContained=false -p:PublishSingleFile=true -f:$framework --artifacts-path "$buildPath" -o "$publishPath/Service"
+		# Copy proper native run time to Service publish directory
+		Copy-Item -Path $nativeRuntimePathFile -Destination "$publishPath/Service"
+		# Delete the Service runtimes folder
+		Remove-Item -Path "$publishPath/Service/runtimes" -Recurse -Force
 	} else {
-		Write-Host "Publish Path not found: $publishPath"
+		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based" -f:$framework --artifacts-path "$buildPath" -o $publishPath
 	}
 
-	# Delete the runtimes folder
-	if ($deleteRunTimes -eq $true) {
-		Remove-Item -Path "$publishPath/runtimes" -Recurse -Force
-	}
+	# Copy proper native run time to publish directory
+	Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
+
+	Get-ChildItem -Path $publishPath -Filter '*.pfx' -Recurse | Remove-Item -Force
+	Get-ChildItem -Path $publishPath -Filter '*.xml' -Recurse | Remove-Item -Force
+	Get-ChildItem -Path $publishPath -Filter '*.pdb' -Recurse | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item -Recurse
 }
 
 $lastPwd = $pwd
@@ -71,51 +77,40 @@ $lastPwd = $pwd
 $string = $pwd.Path
 $position = $string.IndexOf(".azure")
 $basePath = $string.Substring(0,$position-1)  # take off slash off end as well
-Set-Location $basePath/main/GarnetServer
+$buildPath = "$basePath/build"
+$outputPath = "$basePath/release"
+$baseSourcePath = "$outputPath/bin/Release"
+Set-Location $basePath
 
 if ($mode -eq 0 -or $mode -eq 1) {
 	Write-Host "** Publish ... **"
-	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-arm64-based -f:net8.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-x64-based -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-arm64-based -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-x64-based -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=portable -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-arm64-based-readytorun -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-x64-based-readytorun -f:net8.0 
 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-arm64-based -f:net9.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-x64-based -f:net9.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-arm64-based -f:net9.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-x64-based -f:net9.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=portable -f:net9.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-arm64-based-readytorun -f:net9.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-x64-based-readytorun -f:net9.0 
+	# Build, then clean up extra files not needed for publishing
+	BuildAndCleanUpFiles "linux-x64" "linux-x64" "net8.0"
+	BuildAndCleanUpFiles "linux-arm64" "linux-x64" "net8.0"
+	BuildAndCleanUpFiles "osx-arm64" "linux-x64" "net8.0"
+	BuildAndCleanUpFiles "osx-x64" "linux-x64" "net8.0"
+	BuildAndCleanUpFiles "portable" "win-x64" "net8.0"
+	BuildAndCleanUpFiles "win-x64" "win-x64" "net8.0"
+	BuildAndCleanUpFiles "win-arm64" "win-x64" "net8.0"
 
-	# Clean up all the extra files
-	CleanUpFiles "linux-arm64" "linux-x64" "net8.0"
-	CleanUpFiles "linux-x64" "linux-x64" "net8.0"
-	CleanUpFiles "osx-arm64" "linux-x64" "net8.0"
-	CleanUpFiles "osx-x64" "linux-x64" "net8.0"
-	#CleanUpFiles "portable" "win-x64" "net8.0" # don't clean up all files for portable ... leave as is
-	CleanUpFiles "win-x64\Service" "win-x64" "net8.0" $false
-	CleanUpFiles "win-x64" "win-x64" "net8.0"
-	CleanUpFiles "win-arm64" "win-x64" "net8.0"
+	BuildAndCleanUpFiles "linux-x64" "linux-x64" "net9.0"
+	BuildAndCleanUpFiles "linux-arm64" "linux-x64" "net9.0"
+	BuildAndCleanUpFiles "osx-arm64" "linux-x64" "net9.0"
+	BuildAndCleanUpFiles "osx-x64" "linux-x64" "net9.0"
+	BuildAndCleanUpFiles "portable" "win-x64" "net9.0"
+	BuildAndCleanUpFiles "win-x64" "win-x64" "net9.0"
+	BuildAndCleanUpFiles "win-arm64" "win-x64" "net9.0"
 
-	CleanUpFiles "linux-arm64" "linux-x64" "net9.0"
-	CleanUpFiles "linux-x64" "linux-x64" "net9.0"
-	CleanUpFiles "osx-arm64" "linux-x64" "net9.0"
-	CleanUpFiles "osx-x64" "linux-x64" "net9.0"
-	#CleanUpFiles "portable" "win-x64" "net9.0" # don't clean up all files for portable ... leave as is
-	CleanUpFiles "win-x64\Service" "win-x64" "net9.0" $false
-	CleanUpFiles "win-x64" "win-x64" "net9.0"
-	CleanUpFiles "win-arm64" "win-x64" "net9.0"
+	# Delete the runtimes folder
+	Get-ChildItem -Path $outputPath -Filter 'runtimes' -Recurse | Remove-Item -Recurse -Force
 }
 
 if ($mode -eq 0 -or $mode -eq 2) {
 
 	# Make sure at publish folders are there as basic check files are actually published before trying to zip
-	$publishedFilesFolderNet8 = "$basePath/main/GarnetServer/bin/Release/net8.0/publish"
-	$publishedFilesFolderNet9 = "$basePath/main/GarnetServer/bin/Release/net9.0/publish"
+	$publishedFilesFolderNet8 = "$outputPath/bin/Release/net8.0/publish"
+	$publishedFilesFolderNet9 = "$outputPath/bin/Release/net9.0/publish"
 	
 	if (!(Test-Path $publishedFilesFolderNet8) -or !(Test-Path $publishedFilesFolderNet9)) {
 		Write-Error "$publishedFilesFolderNet8 or $publishedFilesFolderNet9 does not exist. Run .\CreateBinaries 1 to publish the binaries first."
@@ -126,8 +121,7 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	# Create the directories - both net80 and net90 will be in the same zip file.
 	$directories = @("linux-arm64", "linux-x64", "osx-arm64", "osx-x64", "portable", "win-arm64", "win-x64")
 	$sourceFramework = @("net8.0", "net9.0")
-	$baseSourcePath = "$basePath/main/GarnetServer/bin/Release"
-	$destinationPath = "$basePath/main/GarnetServer/bin/Release/publish"
+	$destinationPath = "$outputPath/bin/Release/publish"
 	$zipfiledestinationPath = "$destinationPath/output"
 
 	# Make the destination path where the compressed files will be
@@ -161,8 +155,8 @@ if ($mode -eq 0 -or $mode -eq 2) {
  
 	# Compress the files - both net80 and net90 in the same zip file
 	Write-Host "** Compressing the files ... **"
-	7z a -mmt20 -mx5 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
-	7z a -mmt20 -mx5 -scsWIN -r win-arm64-based-readytorun.zip ../win-arm64/*
+	7z a -mmt20 -mx9 -mm=Deflate64 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
+	7z a -mmt20 -mx9 -mm=Deflate64 -scsWIN -r win-arm64-based-readytorun.zip ../win-arm64/*
 	7z a -scsUTF-8 -r linux-x64-based.tar ../linux-x64/*
 	7z a -scsUTF-8 -r linux-arm64-based.tar ../linux-arm64/*
 	7z a -scsUTF-8 -r osx-x64-based.tar ../osx-x64/*
