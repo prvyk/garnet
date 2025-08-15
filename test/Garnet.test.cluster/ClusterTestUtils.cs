@@ -566,6 +566,7 @@ namespace Garnet.test.cluster
         readonly string authPassword;
         readonly X509CertificateCollection certificates;
         readonly ClusterTestContext context;
+        readonly RedisProtocol? protocol;
 
         public ClusterTestUtils(
             EndPointCollection endpoints,
@@ -574,7 +575,8 @@ namespace Garnet.test.cluster
             bool UseTLS = false,
             string authUsername = null,
             string authPassword = null,
-            X509CertificateCollection certificates = null)
+            X509CertificateCollection certificates = null,
+            RedisProtocol? protocol = null)
         {
             r = new Random(674386);
             this.context = context;
@@ -586,6 +588,7 @@ namespace Garnet.test.cluster
             this.textWriter = textWriter;
             this.endpoints = endpoints;
             this.certificates = certificates;
+            this.protocol = protocol;
         }
 
         public int HashSlot(RedisKey key)
@@ -630,7 +633,8 @@ namespace Garnet.test.cluster
                 disablePubSub: disablePubSub,
                 authUsername: authUsername,
                 authPassword: authPassword,
-                certificates: certificates);
+                certificates: certificates,
+                protocol: protocol);
         }
 
         public void Dispose()

@@ -26,8 +26,10 @@ namespace Garnet.test.cluster
         public (Action, string)[] GetUnitTests()
         {
             List<(Action, string)> testList = [
-                new(() => ClusterSRTest(true), "ClusterSRTest(true)"),
-                new(() => ClusterSRTest(false), "ClusterSRTest(false)"),
+                new(() => ClusterSRTest(true, RedisProtocol.Resp2), "ClusterSRTest(true, Resp2)"),
+                new(() => ClusterSRTest(false, RedisProtocol.Resp2), "ClusterSRTest(false, Resp2)"),
+                new(() => ClusterSRTest(true, RedisProtocol.Resp3), "ClusterSRTest(true, Resp3)"),
+                new(() => ClusterSRTest(false, RedisProtocol.Resp3), "ClusterSRTest(false, Resp3)"),
                 new(() => ClusterSRNoCheckpointRestartSecondary(false, false), "ClusterSRNoCheckpointRestartSecondary(false, false)"),
                 new(() => ClusterSRNoCheckpointRestartSecondary(false, true), "ClusterSRNoCheckpointRestartSecondary(false, true)"),
                 new(() => ClusterSRNoCheckpointRestartSecondary(true, false), "ClusterSRNoCheckpointRestartSecondary(true, false)"),
@@ -108,14 +110,18 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("REPLICATION")]
-        public void ClusterSRTest([Values] bool disableObjects)
+        [TestCase(false, RedisProtocol.Resp2)]
+        [TestCase(true, RedisProtocol.Resp2)]
+        [TestCase(false, RedisProtocol.Resp3)]
+        [TestCase(true, RedisProtocol.Resp3)]
+        public void ClusterSRTest(bool disableObjects, RedisProtocol protocol)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
-            context.CreateConnection(useTLS: useTLS);
+            context.CreateConnection(useTLS: useTLS, protocol: protocol);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);

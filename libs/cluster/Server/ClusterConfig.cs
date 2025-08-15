@@ -11,6 +11,8 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text;
+using Garnet.common;
+using System.Linq;
 
 namespace Garnet.cluster
 {
@@ -641,105 +643,111 @@ namespace Garnet.cluster
         /// <summary>
         /// Get formatted (using CLUSTER SHARDS format) cluster config information.
         /// </summary>
+        /// <param name="writer"></param>
         /// <param name="clusterConnection"></param>
-        /// <returns>RESP formatted string</returns>
-        public string GetShardsInfo(GarnetClusterConnectionStore clusterConnection)
+        public void GetShardsInfo(ref RespMemoryWriter writer, GarnetClusterConnectionStore clusterConnection)
         {
-            var shardsInfo = "";
-            var shardCount = 0;
+            writer.WriteArrayLength(workers.Where(x => x.Role == NodeRole.PRIMARY).Count());
+
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY)
                 {
                     var shardRanges = GetShardRanges(i);
                     var replicaWorkerIds = GetWorkerReplicas(i);
-                    shardsInfo += CreateFormattedShardInfo(i, shardRanges, replicaWorkerIds);
-                    shardCount++;
+                    CreateFormattedShardInfo(ref writer, i, shardRanges, replicaWorkerIds);
                 }
             }
-            shardsInfo = $"*{shardCount}\r\n" + shardsInfo;
-            return shardsInfo;
 
-            string CreateFormattedShardInfo(int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
+            void CreateFormattedShardInfo(ref RespMemoryWriter writer, int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
             {
-                var shardInfo = $"*4\r\n";
-                shardInfo += $"$5\r\nslots\r\n";
-                shardInfo += $"*{shardRanges.Count * 2}\r\n";
+                writer.WriteMapLength(2);
+                writer.WriteBulkString("slots"u8);
+                writer.WriteArrayLength(shardRanges.Count * 2);
                 for (var i = 0; i < shardRanges.Count; i++)
                 {
                     var range = shardRanges[i];
-                    shardInfo += $":{range.Item1}\r\n";
-                    shardInfo += $":{range.Item2}\r\n";
+                    writer.WriteInt32(range.Item1);
+                    writer.WriteInt32(range.Item2);
                 }
 
-                shardInfo += $"$5\r\nnodes\r\n";
-                shardInfo += $"*{1 + replicaWorkerIds.Count}\r\n";
+                writer.WriteBulkString("nodes"u8);
+                writer.WriteArrayLength(1 + replicaWorkerIds.Count);
                 if (primaryWorkerId == 1)
-                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, true);
+                    CreateFormattedNodeInfo(ref writer, primaryWorkerId, true);
                 else
                 {
                     _ = clusterConnection.GetConnectionInfo(workers[primaryWorkerId].Nodeid, out var info);
-                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, info.connected);
+                    CreateFormattedNodeInfo(ref writer, primaryWorkerId, info.connected);
                 }
                 foreach (var id in replicaWorkerIds)
                 {
                     _ = clusterConnection.GetConnectionInfo(workers[id].Nodeid, out var info);
-                    shardInfo += CreateFormattedNodeInfo(id, info.connected);
+                    CreateFormattedNodeInfo(ref writer, id, info.connected);
                 }
 
-                return shardInfo;
-
-                string CreateFormattedNodeInfo(int workerId, bool connected)
+                void CreateFormattedNodeInfo(ref RespMemoryWriter writer, int workerId, bool connected)
                 {
-                    var nodeInfo = "*12\r\n";
-                    nodeInfo += "$2\r\nid\r\n";
-                    nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
-                    nodeInfo += "$4\r\nport\r\n";
-                    nodeInfo += $":{workers[workerId].Port}\r\n";
-                    nodeInfo += "$7\r\naddress\r\n";
-                    nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
-                    nodeInfo += "$4\r\nrole\r\n";
-                    nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
-                    nodeInfo += "$18\r\nreplication-offset\r\n";
-                    nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
-                    nodeInfo += "$6\r\nhealth\r\n";
-                    nodeInfo += connected ? "$6\r\nonline\r\n" : "$7\r\noffline\r\n";
-                    return nodeInfo;
+                    writer.WriteMapLength(6);
+                    writer.WriteBulkString("id"u8);
+                    writer.WriteAsciiBulkString(workers[workerId].Nodeid);
+                    writer.WriteBulkString("port"u8);
+                    writer.WriteInt32(workers[workerId].Port);
+                    writer.WriteBulkString("address"u8);
+                    writer.WriteAsciiBulkString(workers[workerId].Address);
+                    writer.WriteBulkString("role"u8);
+                    writer.WriteAsciiBulkString(workers[workerId].Role.ToString());
+                    writer.WriteBulkString("replication-offset"u8);
+                    writer.WriteInt64(workers[workerId].ReplicationOffset);
+                    writer.WriteBulkString("health"u8);
+                    writer.WriteBulkString(connected ? "online"u8 : "offline"u8);
                 }
             }
         }
 
-        private string CreateFormattedSlotInfo(int slotStart, int slotEnd, string address, int port, string nodeid, string hostname, List<string> replicaIds)
+        private void CreateFormattedSlotInfo(ref RespMemoryWriter writer, int slotStart, int slotEnd,
+                                             string address, int port, string nodeid, string hostname,
+                                             List<string> replicaIds)
         {
-            int countA = replicaIds.Count == 0 ? 3 : 3 + replicaIds.Count;
-            var rangeInfo = $"*{countA}\r\n";
+            var countA = replicaIds.Count == 0 ? 3 : 3 + replicaIds.Count;
 
-            rangeInfo += $":{slotStart}\r\n";
-            rangeInfo += $":{slotEnd}\r\n";
-            rangeInfo += $"*4\r\n${address.Length}\r\n{address}\r\n:{port}\r\n${nodeid.Length}\r\n{nodeid}\r\n";
-            rangeInfo += $"*2\r\n$8\r\nhostname\r\n${hostname.Length}\r\n{hostname}\r\n";
+            writer.WriteArrayLength(countA);
+            writer.WriteInt32(slotStart);
+            writer.WriteInt32(slotEnd);
+            writer.WriteArrayLength(4);
+            writer.WriteAsciiBulkString(address);
+            writer.WriteInt32(port);
+            writer.WriteAsciiBulkString(nodeid);
+            writer.WriteMapLength(1);
+            writer.WriteBulkString("hostname"u8);
+            writer.WriteAsciiBulkString(hostname);
 
             foreach (var replicaId in replicaIds)
             {
                 var (replicaAddress, replicaPort) = GetWorkerAddressFromNodeId(replicaId);
                 var replicaHostname = GetHostNameFromNodeId(replicaId);
 
-                rangeInfo += $"*4\r\n${replicaAddress.Length}\r\n{replicaAddress}\r\n:{replicaPort}\r\n${replicaId.Length}\r\n{replicaId}\r\n";
-                rangeInfo += $"*2\r\n$8\r\nhostname\r\n${replicaHostname.Length}\r\n{replicaHostname}\r\n";
+                writer.WriteArrayLength(4);
+                writer.WriteAsciiBulkString(replicaAddress);
+                writer.WriteInt32(port);
+                writer.WriteAsciiBulkString(replicaId);
+                writer.WriteMapLength(1);
+                writer.WriteBulkString("hostname"u8);
+                writer.WriteAsciiBulkString(replicaHostname);
             }
-            return rangeInfo;
         }
 
         /// <summary>
         /// Get formatted (using CLUSTER SLOTS format) cluster config info.
         /// </summary>
-        /// <returns>Formatted string.</returns>
-        public string GetSlotsInfo()
+        /// <param name="writer"></param>
+        public void GetSlotsInfo(ref RespMemoryWriter writer)
         {
-            string completeSlotInfo = "";
             int slotRanges = 0;
             int slotStart;
             int slotEnd;
+
+            writer.WriteArrayLength(slotMap.Length, out _, out var aLen);
 
             for (slotStart = 0; slotStart < slotMap.Length; slotStart++)
             {
@@ -759,14 +767,14 @@ namespace Garnet.cluster
                 var hostname = workers[currSlotWorkerId].hostname;
                 var replicas = GetReplicaIds(nodeid);
                 slotEnd--;
-                completeSlotInfo += CreateFormattedSlotInfo(slotStart, slotEnd, address, port, nodeid, hostname, replicas);
+                CreateFormattedSlotInfo(ref writer, slotStart, slotEnd, address, port, nodeid, hostname, replicas);
                 slotRanges++;
                 slotStart = slotEnd;
             }
-            completeSlotInfo = $"*{slotRanges}\r\n" + completeSlotInfo;
-            //Console.WriteLine(completeSlotInfo);
 
-            return completeSlotInfo;
+            writer.DecreaseArrayLength(slotRanges, aLen);
+
+            //Console.WriteLine(Encoding.ASCII.GetString(writer.AsReadOnlySpan()));
         }
 
         /// <summary>
