@@ -43,14 +43,16 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(1)]
-        [TestCase(0, 16383)]
-        [TestCase(1234, 5678)]
-        public void ClusterSlotsTest(int startSlot, int endSlot)
+        [TestCase(0, 16383, RedisProtocol.Resp2)]
+        [TestCase(1234, 5678, RedisProtocol.Resp2)]
+        [TestCase(0, 16383, RedisProtocol.Resp3)]
+        [TestCase(1234, 5678, RedisProtocol.Resp3)]
+        public void ClusterSlotsTest(int startSlot, int endSlot, RedisProtocol protocol)
         {
             var slotRanges = new List<(int, int)>[1];
             slotRanges[0] = [(startSlot, endSlot)];
             context.CreateInstances(defaultShards);
-            context.CreateConnection();
+            context.CreateConnection(protocol: protocol);
             _ = context.clusterTestUtils.SimpleSetupCluster(customSlotRanges: slotRanges, logger: context.logger);
 
             var slotsResult = context.clusterTestUtils.ClusterSlots(0, context.logger);
@@ -65,10 +67,12 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(2)]
-        public void ClusterSlotRangesTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void ClusterSlotRangesTest(RedisProtocol protocol)
         {
             context.CreateInstances(defaultShards);
-            context.CreateConnection();
+            context.CreateConnection(protocol: protocol);
             var slotRanges = new List<(int, int)>[3];
             slotRanges[0] = [(5680, 6150), (12345, 14567)];
             slotRanges[1] = [(1021, 2371), (3376, 5678)];

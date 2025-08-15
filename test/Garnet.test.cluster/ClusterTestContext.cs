@@ -407,16 +407,19 @@ namespace Garnet.test.cluster
         /// <param name="useTLS"></param>
         /// <param name="certificates"></param>
         /// <param name="clientCreds"></param>
+        /// <param name="protocol"></param>
         public void CreateConnection(
             bool enabledCluster = true,
             bool useTLS = false,
             X509CertificateCollection certificates = null,
-            ServerCredential clientCreds = new ServerCredential())
+            ServerCredential clientCreds = new ServerCredential(),
+            RedisProtocol? protocol = null)
         {
             clusterTestUtils?.Dispose();
             clusterTestUtils = new ClusterTestUtils(
                 endpoints,
                 context: this,
+                protocol: protocol,
                 textWriter: logTextWriter,
                 UseTLS: useTLS,
                 authUsername: clientCreds.user,

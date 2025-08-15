@@ -7,6 +7,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -619,9 +620,21 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo();
-            while (!RespWriteUtils.TryWriteAsciiDirect(slotsInfo, ref dcurr, dend))
-                SendAndReset();
+            var spam = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var writer = new RespMemoryWriter(respProcotolVersion, ref spam);
+            try
+            {
+                clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo(ref writer);
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+
+            if (!spam.IsSpanByte)
+                SendAndReset(spam.Memory, spam.Length);
+            else
+                dcurr += spam.Length;
 
             return true;
         }
